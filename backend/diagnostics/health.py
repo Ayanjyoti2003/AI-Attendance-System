@@ -116,8 +116,8 @@ class HealthManager:
                 active_cameras = db.query(Camera).filter(Camera.status != "DISABLED").all()
                 total_cameras = len(active_cameras)
                 online = sum(1 for c in active_cameras if c.status == "ONLINE")
-                offline = sum(1 for c in active_cameras if c.status == "OFFLINE")
                 error = sum(1 for c in active_cameras if c.status == "ERROR")
+                offline = sum(1 for c in active_cameras if c.status not in ["ONLINE", "ERROR"])
 
                 last_seens = [c.last_seen for c in active_cameras if c.last_seen is not None]
                 if last_seens:

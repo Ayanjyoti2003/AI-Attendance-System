@@ -46,6 +46,8 @@ class CameraManager:
     def __init__(self):
         # Map camera_id → { "thread": Thread, "stop_event": Event, "config": dict }
         self.workers: dict[int, dict] = {}
+        # Track worker launch history for crash backoff
+        self.worker_history: dict[int, dict] = {}
         self._lock = threading.Lock()
 
     def _get_active_cameras(self):
@@ -92,11 +94,19 @@ class CameraManager:
 
     def _stop_worker(self, cam_id: int):
         """Signal a worker to stop and clean up."""
+        self.worker_history.pop(cam_id, None)
         worker = self.workers.pop(cam_id, None)
         if worker:
             worker["stop_event"].set()
             worker["thread"].join(timeout=10)
             print(f"[MANAGER] Stopped worker for camera {cam_id}")
+            
+            # Clean up status/telemetry on backend
+            try:
+                from face_service.camera_worker import update_camera_diagnostics
+                update_camera_diagnostics(cam_id, "OFFLINE", last_error="Worker stopped by manager.")
+            except Exception as e:
+                print(f"[MANAGER] Failed to cleanup backend state for camera {cam_id}: {e}")
 
     def _is_worker_hung(self, cam_id: int) -> bool:
         """Check if a worker is alive but hasn't sent a heartbeat recently."""
@@ -143,24 +153,69 @@ class CameraManager:
             for cam in active_cameras:
                 cam_id = cam["id"]
                 worker = self.workers.get(cam_id)
+                now = time.time()
+
+                history = self.worker_history.setdefault(cam_id, {
+                    "last_start": 0.0,
+                    "failures": 0,
+                    "backoff_until": 0.0
+                })
 
                 if worker and not worker["thread"].is_alive():
-                    # Worker died — restart it
-                    print(f"[MANAGER] Worker for camera {cam_id} died, restarting...")
+                    # Worker died unexpectedly
+                    runtime = now - history["last_start"]
+                    print(f"[MANAGER] Worker for camera {cam_id} died unexpectedly (ran for {runtime:.1f}s).")
                     self._stop_worker(cam_id)
-                    self._start_worker(cam)
+                    
+                    if runtime < 30.0:
+                        history["failures"] += 1
+                        backoff_delay = min(300, 15 * (2 ** (history["failures"] - 1)))
+                        history["backoff_until"] = now + backoff_delay
+                        print(f"[MANAGER] Worker for camera {cam_id} crashed too quickly. Re-spawn backed off for {backoff_delay}s.")
+                        
+                        # Update status to ERROR on backend
+                        try:
+                            from face_service.camera_worker import update_camera_diagnostics
+                            update_camera_diagnostics(
+                                cam_id, 
+                                "ERROR", 
+                                last_error=f"Worker crashed after {runtime:.1f}s. Re-spawn backed off for {backoff_delay}s."
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        # Reset failures and restart immediately
+                        history["failures"] = 0
+                        history["backoff_until"] = 0.0
+                        history["last_start"] = now
+                        self._start_worker(cam)
+
                 elif worker and self._is_worker_hung(cam_id):
-                    # Worker hung (is_alive but no heartbeat) — force restart
-                    print(f"[MANAGER] Worker for camera {cam_id} appears hung (no heartbeat in {WORKER_HANG_TIMEOUT}s), restarting...")
+                    # Worker hung — force restart
+                    print(f"[MANAGER] Worker for camera {cam_id} hung, restarting...")
                     self._stop_worker(cam_id)
+                    history["failures"] = 0
+                    history["backoff_until"] = 0.0
+                    history["last_start"] = now
                     self._start_worker(cam)
+
                 elif worker and self._config_changed(cam_id, cam):
                     # Config changed — restart
                     print(f"[MANAGER] Config changed for camera {cam_id}, restarting...")
                     self._stop_worker(cam_id)
+                    history["failures"] = 0
+                    history["backoff_until"] = 0.0
+                    history["last_start"] = now
                     self._start_worker(cam)
+
                 elif not worker:
-                    # New camera — start
+                    # New camera configuration, check if we're backed off
+                    if now < history["backoff_until"]:
+                        # Currently in backoff period
+                        continue
+                        
+                    # Start new worker
+                    history["last_start"] = now
                     self._start_worker(cam)
 
     def run_forever(self):

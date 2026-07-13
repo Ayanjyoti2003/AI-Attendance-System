@@ -30,6 +30,15 @@ export default function StatusBadge({
 
         DISABLED:
             "bg-orange-500/20 text-orange-400",
+
+        CONNECTING:
+            "bg-blue-500/20 text-blue-400",
+
+        RECONNECTING:
+            "bg-amber-500/20 text-amber-400",
+
+        BUSY:
+            "bg-purple-500/20 text-purple-400",
     };
 
     return (

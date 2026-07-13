@@ -65,6 +65,21 @@ class Camera(Base):
         nullable=True
     )
 
+    last_error = Column(
+        String,
+        nullable=True
+    )
+
+    last_successful_frame = Column(
+        DateTime,
+        nullable=True
+    )
+
+    device_name = Column(
+        String,
+        nullable=True
+    )
+
 class User(Base):
     __tablename__ = "users"
 

@@ -808,26 +808,29 @@ def create_camera(data: CameraCreate, current_user=Depends(get_current_user)):
 
 @app.get("/api/cameras")
 def get_cameras():
-
+    from backend.camera_telemetry import telemetry_manager
     db = SessionLocal()
-
     try:
-
         cameras = db.query(Camera).all()
-
-        return [
-            {
+        result = []
+        for cam in cameras:
+            telemetry = telemetry_manager.get(cam.id)
+            result.append({
                 "id": cam.id,
                 "name": cam.name,
                 "location": cam.location,
                 "camera_type": cam.camera_type,
                 "source": cam.source,
                 "status": cam.status,
-                "last_seen": str(cam.last_seen) if cam.last_seen else None
-            }
-            for cam in cameras
-        ]
-
+                "last_seen": cam.last_seen.isoformat() if cam.last_seen else None,
+                "last_error": cam.last_error,
+                "last_successful_frame": cam.last_successful_frame.isoformat() if cam.last_successful_frame else None,
+                "device_name": cam.device_name,
+                "reconnect_attempts": telemetry.get("reconnect_attempts", 0),
+                "reconnect_countdown": telemetry.get("reconnect_countdown"),
+                "last_reconnect_attempt": telemetry.get("last_reconnect_attempt")
+            })
+        return result
     finally:
         db.close()
 
@@ -856,17 +859,72 @@ def camera_heartbeat(camera_id: int):
 
 class CameraStatusUpdate(BaseModel):
     status: str
+    last_error: Optional[str] = None
+    last_successful_frame: Optional[datetime] = None
+    device_name: Optional[str] = None
+    reconnect_attempts: Optional[int] = None
+    reconnect_countdown: Optional[int] = None
+    last_reconnect_attempt: Optional[datetime] = None
 
 @app.patch("/api/cameras/{camera_id}/status")
-def update_camera_status(camera_id: int, data: CameraStatusUpdate):
+async def update_camera_status(camera_id: int, data: CameraStatusUpdate):
+    from backend.camera_telemetry import telemetry_manager
     db = SessionLocal()
     try:
         camera = db.query(Camera).filter(Camera.id == camera_id).first()
         if not camera:
             return {"error": "Camera not found"}
+        
+        # If camera is disabled, clean up its telemetry
+        if data.status == "DISABLED":
+            telemetry_manager.delete(camera_id)
+        
+        # Update database fields for persistent columns
         camera.status = data.status
         camera.last_seen = datetime.utcnow()
+        
+        # Only update last_error in DB if it changes
+        if data.last_error is not None:
+            if camera.last_error != data.last_error:
+                camera.last_error = data.last_error
+        
+        if data.last_successful_frame is not None:
+            camera.last_successful_frame = data.last_successful_frame
+        if data.device_name is not None:
+            camera.device_name = data.device_name
+            
         db.commit()
+        db.refresh(camera)
+        
+        # Update in-memory telemetry for transient variables
+        telemetry_data = {}
+        if data.reconnect_attempts is not None:
+            telemetry_data["reconnect_attempts"] = data.reconnect_attempts
+        if data.reconnect_countdown is not None:
+            telemetry_data["reconnect_countdown"] = data.reconnect_countdown
+        if data.last_reconnect_attempt is not None:
+            telemetry_data["last_reconnect_attempt"] = data.last_reconnect_attempt.isoformat()
+            
+        telemetry = telemetry_manager.update(camera_id, telemetry_data)
+        
+        # Broadcast the updated status immediately over WebSockets
+        payload = {
+            "type": "camera_status",
+            "camera_id": camera_id,
+            "status": camera.status,
+            "data": {
+                "status": camera.status,
+                "device_name": camera.device_name,
+                "last_error": camera.last_error,
+                "last_successful_frame": camera.last_successful_frame.isoformat() if camera.last_successful_frame else None,
+                "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
+                "reconnect_attempts": telemetry.get("reconnect_attempts", 0),
+                "reconnect_countdown": telemetry.get("reconnect_countdown"),
+                "last_reconnect_attempt": telemetry.get("last_reconnect_attempt")
+            }
+        }
+        await manager.broadcast(payload)
+        
         return {"status": "ok", "camera_status": data.status}
     finally:
         db.close()
@@ -983,6 +1041,10 @@ def delete_camera(camera_id: int, current_user=Depends(get_current_user)):
         camera_name = camera.name
         db.delete(camera)
         db.commit()
+
+        # Clean up telemetry in memory
+        from backend.camera_telemetry import telemetry_manager
+        telemetry_manager.delete(camera_id)
 
         create_audit_log(
             username=current_user["sub"],

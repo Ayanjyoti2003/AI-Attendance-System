@@ -59,7 +59,44 @@ export default function CamerasPage() {
         }
     }
 
-    useEffect(() => { loadCameras(); }, []);
+    const [, setTick] = useState(0);
+
+    useEffect(() => {
+        loadCameras();
+
+        // 1-second dynamic tick for countdowns
+        const tickInterval = setInterval(() => {
+            setTick((t) => t + 1);
+        }, 1000);
+
+        // WebSocket listener for live camera status pushes
+        const wsUrl = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000/ws/attendance";
+        const ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === "camera_status") {
+                    setCamerasList((prev) =>
+                        prev.map((c) =>
+                            c.id === data.camera_id ? { ...c, ...data.data } : c
+                        )
+                    );
+                }
+            } catch (err) {
+                console.error("Error processing camera websocket update:", err);
+            }
+        };
+
+        ws.onerror = (err) => {
+            console.error("Camera WebSocket error:", err);
+        };
+
+        return () => {
+            clearInterval(tickInterval);
+            ws.close();
+        };
+    }, []);
 
     // Reset add source when type changes
     useEffect(() => {
@@ -325,7 +362,19 @@ export default function CamerasPage() {
                                     {filteredCameras.map((cam) => (
                                         <tr key={cam.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-850/30 text-zinc-800 dark:text-zinc-200 transition-colors">
                                             <td className="p-4 font-medium text-zinc-400 dark:text-zinc-550">{cam.id}</td>
-                                            <td className="p-4 font-semibold text-zinc-900 dark:text-white">{cam.name}</td>
+                                            <td className="p-4">
+                                                <div className="font-semibold text-zinc-900 dark:text-white">{cam.name}</div>
+                                                {cam.device_name && (
+                                                    <div className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium mt-0.5">
+                                                        HW: {cam.device_name}
+                                                    </div>
+                                                )}
+                                                {cam.last_error && (
+                                                    <div className="text-xs text-rose-500 font-medium mt-1 max-w-xs break-words" title={cam.last_error}>
+                                                        {cam.last_error}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="p-4 text-zinc-700 dark:text-zinc-300">{cam.location}</td>
                                             <td className="p-4">
                                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
@@ -338,7 +387,23 @@ export default function CamerasPage() {
                                             </td>
                                             <td className="p-4 font-mono text-xs text-zinc-600 dark:text-zinc-400">{cam.source}</td>
                                             <td className="p-4 text-xs text-zinc-500 dark:text-zinc-400">{formatLastSeen(cam.last_seen)}</td>
-                                            <td className="p-4"><StatusBadge status={cam.status || "OFFLINE"} /></td>
+                                            <td className="p-4">
+                                                <div className="flex flex-col gap-1 items-start">
+                                                    <StatusBadge status={cam.status || "OFFLINE"} />
+                                                    {cam.reconnect_countdown && cam.last_reconnect_attempt && (
+                                                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium animate-pulse mt-0.5">
+                                                            {(() => {
+                                                                const attemptTime = new Date(cam.last_reconnect_attempt).getTime();
+                                                                const totalWait = cam.reconnect_countdown * 1000;
+                                                                const remaining = Math.max(0, Math.ceil((attemptTime + totalWait - Date.now()) / 1000));
+                                                                return remaining > 0 
+                                                                    ? `Retrying in ${remaining}s (Attempt ${cam.reconnect_attempts || 1})`
+                                                                    : `Reconnecting...`;
+                                                            })()}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
                                             <td className="p-4 text-right">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     {/* Test */}

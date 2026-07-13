@@ -1,24 +1,13 @@
-import cv2
+from pygrabber.dshow_graph import FilterGraph
 
-cap = cv2.VideoCapture(1)
+def test_pygrabber():
+    try:
+        graph = FilterGraph()
+        devices = graph.get_input_devices()
+        print("Connected Devices:")
+        for idx, name in enumerate(devices):
+            print(f"Index {idx}: {name}")
+    except Exception as e:
+        print("Error query devices:", e)
 
-if not cap.isOpened():
-    print("Camera could not be opened")
-    exit()
-
-while True:
-    ret, frame = cap.read()
-
-    print("Frame captured:", ret)
-
-    if not ret:
-        print("Failed to grab frame")
-        break
-
-    cv2.imshow("Camera Test", frame)
-
-    if cv2.waitKey(1) == 27:
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+test_pygrabber()

@@ -1,0 +1,40 @@
+appId: com.aiattendance.system
+productName: AI Attendance System
+
+directories:
+  output: dist
+
+compression: maximum
+
+files:
+  - electron/**/*
+  - frontend/dist/**/*
+  - "!electron/runtime-build/**/*"
+  - "!backend/**/*"
+  - "!face_service/**/*"
+  - "!data/**/*"
+  - "!**/node_modules/**"
+  - "!**/.env"
+  - "!**/venv/**"
+  - "!**/__pycache__/**"
+  - "!**/tree.text"
+
+extraResources:
+  - from: electron/runtime-build
+    to: runtime
+
+win:
+  target: nsis
+  icon: electron/icon.ico
+
+nsis:
+  oneClick: true
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: AI Attendance System
+  installerIcon: electron/icon.ico
+  uninstallerIcon: electron/icon.ico
+  artifactName: "AI Attendance System Setup ${version}.${ext}"
+  perMachine: true
+  include: electron/prerequisites/installer.nsh

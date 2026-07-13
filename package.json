@@ -1,0 +1,73 @@
+{
+  "name": "ai-attendance-system",
+  "version": "1.0.0",
+  "description": "AI Attendance Management System - Desktop Application",
+  "main": "electron/main.js",
+  "author": "Ayanjyoti",
+  "license": "MIT",
+  "scripts": {
+    "electron": "npm run build:frontend && electron .",
+    "electron:dev": "electron .",
+    "build:frontend": "cd frontend && npm run build",
+    "electron-build": "npm run build:frontend && electron-builder --win",
+    "package:runtime": "node electron/package-runtime.js",
+    "build:python-runtime": "node electron/scripts/build-python-runtime.js",
+    "verify:python-runtime": "node electron/scripts/test-python-runtime.js",
+    "package:models": "node electron/scripts/package-ai-models.js",
+    "verify:ai-runtime": "node electron/scripts/test-ai-runtime.js",
+    "package:postgres": "node electron/scripts/package-postgres-runtime.js",
+    "verify:postgres-runtime": "node electron/scripts/test-postgres-runtime.js",
+    "package:prerequisites": "node electron/scripts/package-prerequisites.js",
+    "build:app": "electron-builder --win",
+    "generate:build-info": "node electron/scripts/generate-build-info.js",
+    "verify:release": "node electron/scripts/verify-release.js",
+    "release": "npm run build:frontend && npm run package:runtime && npm run build:python-runtime && npm run package:models && npm run package:postgres && npm run package:prerequisites && npm run generate:build-info && npm run verify:python-runtime && npm run verify:ai-runtime && npm run verify:postgres-runtime && npm run verify:release && npm run build:app && node electron/scripts/verify-installer.js"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.aiattendance.system",
+    "productName": "AI Attendance System",
+    "directories": {
+      "output": "dist"
+    },
+    "compression": "maximum",
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "!electron/runtime-build/**/*",
+      "!backend/**/*",
+      "!face_service/**/*",
+      "!data/**/*",
+      "!**/node_modules/**",
+      "!**/.env",
+      "!**/venv/**",
+      "!**/__pycache__/**",
+      "!**/tree.text"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/runtime-build",
+        "to": "runtime"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Attendance System",
+      "installerIcon": "electron/icon.ico",
+      "uninstallerIcon": "electron/icon.ico",
+      "artifactName": "AI Attendance System Setup ${version}.${ext}",
+      "perMachine": true,
+      "include": "electron/prerequisites/installer.nsh"
+    }
+  }
+}

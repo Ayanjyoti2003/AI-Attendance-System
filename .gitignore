@@ -1,0 +1,136 @@
+############################
+# Node.js
+############################
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+############################
+# Python
+############################
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+############################
+# Environment Variables
+############################
+
+.env
+.env.*
+!.env.example
+
+############################
+# Build Output
+############################
+
+dist/
+dist-electron/
+frontend/dist/
+out/
+release/
+build/
+
+############################
+# Electron Runtime
+############################
+
+electron/runtime-build/
+runtime-size-report.txt
+postgres-runtime-report.txt
+
+############################
+# Installer Prerequisites
+############################
+
+electron/prerequisites/*.exe
+electron/prerequisites/*.sha256
+
+############################
+# Runtime Data
+############################
+
+data/
+logs/
+uploads/
+backups/
+employees/
+
+############################
+# Databases
+############################
+
+*.db
+*.sqlite
+*.sqlite3
+postgres-data/
+
+############################
+# Logs
+############################
+
+*.log
+logs/
+
+############################
+# IDE
+############################
+
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+
+############################
+# Operating System
+############################
+
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+############################
+# Coverage
+############################
+
+coverage/
+.coverage
+htmlcov/
+
+############################
+# Temporary Files
+############################
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+############################
+# Tree / Directory Dumps
+############################
+
+tree*.txt
+*tree*.txt
+tree*.text
+*tree*.text
+directory*.txt
+structure*.txt
+folder*.txt
+codebase*.txt
+project_structure*.txt
+
+############################
+# Large Binary Archives
+############################
+
+*.zip
+postgres-binaries.zip

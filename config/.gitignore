@@ -1,0 +1,6 @@
+# Auto-generated config — do not commit
+app_config.json
+
+# Future: encrypted credentials
+.credentials.enc
+.fernet.key

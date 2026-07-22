@@ -84,7 +84,7 @@ export async function initializeDatabase(): Promise<{
 export async function setupAdmin(data: {
     username: string;
     password: string;
-}): Promise<{ status?: string; error?: string }> {
+}): Promise<{ status?: string; error?: string; recovery_key?: string }> {
     const response = await api.post("/api/setup/admin", data);
     return response.data;
 }

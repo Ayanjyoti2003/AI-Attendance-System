@@ -112,7 +112,7 @@ export default function SetupWizard() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-zinc-950 relative overflow-hidden select-none">
+        <div className="min-h-full flex items-center justify-center bg-zinc-950 relative overflow-hidden select-none">
             {/* Ambient background */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-blue-600/8 blur-[140px]" />

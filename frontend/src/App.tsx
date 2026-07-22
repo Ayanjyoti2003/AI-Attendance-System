@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import AppTitleBar from "./components/AppTitleBar";
+import { TitleBarProvider } from "./context/TitleBarContext";
 import {
   HashRouter,
   Routes,
@@ -17,6 +19,7 @@ import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import SetupWizard from "./pages/setup/SetupWizard";
+import ChangePassword from "./pages/ChangePassword";
 import { ToastProvider } from "./components/Toast";
 import { getSetupStatus } from "./api/setup";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -27,10 +30,26 @@ function ProtectedRoute({
   children: React.ReactNode;
 }) {
   const token = localStorage.getItem("token");
+  const mustChange = localStorage.getItem("must_change_password") === "true";
 
-  return token
-    ? children
-    : <Navigate to="/login" replace />;
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (mustChange) {
+    return <Navigate to="/change-password" replace />;
+  }
+
+  return children;
+}
+
+function ChangePasswordRoute({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  const token = localStorage.getItem("token");
+  return token ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
 // Guard: redirect /setup → /login if setup already completed
@@ -47,7 +66,7 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
 
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <div className="min-h-full flex items-center justify-center bg-zinc-950">
         <LoadingSpinner />
       </div>
     );
@@ -70,7 +89,7 @@ function RootRedirect() {
 
   if (checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <div className="min-h-full flex items-center justify-center bg-zinc-950">
         <LoadingSpinner />
       </div>
     );
@@ -94,7 +113,11 @@ export default function App() {
   return (
     <ToastProvider>
       <HashRouter>
-        <Routes>
+        <TitleBarProvider>
+          <div className="flex flex-col h-screen overflow-hidden">
+            <AppTitleBar />
+            <div className="flex-1 min-h-0 relative overflow-hidden bg-zinc-950">
+              <Routes>
           {/* Setup Wizard — only accessible before setup is complete */}
           <Route
             path="/setup"
@@ -108,6 +131,15 @@ export default function App() {
           <Route
             path="/login"
             element={<Login />}
+          />
+
+          <Route
+            path="/change-password"
+            element={
+              <ChangePasswordRoute>
+                <ChangePassword />
+              </ChangePasswordRoute>
+            }
           />
 
           <Route
@@ -192,7 +224,10 @@ export default function App() {
             path="*"
             element={<NotFound />}
           />
-        </Routes>
+              </Routes>
+            </div>
+          </div>
+        </TitleBarProvider>
       </HashRouter>
     </ToastProvider>
   );

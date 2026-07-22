@@ -23,7 +23,7 @@ export default function DashboardLayout({ children }: Props) {
     };
 
     return (
-        <div className="flex h-screen overflow-hidden bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
+        <div className="flex h-full overflow-hidden bg-zinc-100 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
             {/* Sidebar */}
             <Sidebar isCollapsed={isCollapsed} onToggleCollapse={toggleCollapse} />
 

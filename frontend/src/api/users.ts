@@ -20,3 +20,11 @@ export async function updateUserRole(userId: number, role: User["role"]): Promis
     const response = await api.patch(`/api/users/${userId}/role`, { role });
     return response.data;
 }
+
+export async function resetUserPassword(userId: number, data: {
+    new_password: string;
+    must_change_password: boolean;
+}): Promise<any> {
+    const response = await api.post(`/api/users/${userId}/reset-password`, data);
+    return response.data;
+}

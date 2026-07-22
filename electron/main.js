@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu } = require("electron");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const http = require("http");
@@ -448,6 +448,7 @@ function createSplashWindow() {
 
 // ─── Main Window ────────────────────────────────────────
 function createMainWindow() {
+  const isDarwin = process.platform === "darwin";
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -456,11 +457,21 @@ function createMainWindow() {
     title: "AI Attendance System",
     icon: path.join(__dirname, "icon.ico"),
     show: false,
+    frame: false,
+    titleBarStyle: isDarwin ? "hidden" : "hidden",
+    titleBarOverlay: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
+  });
+
+  mainWindow.on("maximize", () => {
+    mainWindow.webContents.send("window-maximized-change", true);
+  });
+  mainWindow.on("unmaximize", () => {
+    mainWindow.webContents.send("window-maximized-change", false);
   });
 
   // Load frontend build explicitly distinguishing packaged and development mode
@@ -818,6 +829,46 @@ app.whenReady().then(async () => {
 
   // Backend is ready — open main window
   createMainWindow();
+});
+
+// IPC handlers for custom title bar window controls
+ipcMain.on("window-minimize", () => {
+  if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.on("window-maximize", () => {
+  if (mainWindow) mainWindow.maximize();
+});
+
+ipcMain.on("window-unmaximize", () => {
+  if (mainWindow) mainWindow.unmaximize();
+});
+
+ipcMain.on("window-close", () => {
+  if (mainWindow) mainWindow.close();
+});
+
+ipcMain.handle("window-is-maximized", () => {
+  return mainWindow ? mainWindow.isMaximized() : false;
+});
+
+ipcMain.on("window-system-menu", (event, { x, y }) => {
+  if (!mainWindow) return;
+  const menu = Menu.buildFromTemplate([
+    { label: "Restore", click: () => mainWindow.unmaximize(), enabled: mainWindow.isMaximized() },
+    { label: "Move", enabled: false },
+    { label: "Size", enabled: false },
+    { label: "Minimize", click: () => mainWindow.minimize() },
+    { label: "Maximize", click: () => mainWindow.maximize(), enabled: !mainWindow.isMaximized() },
+    { type: "separator" },
+    { label: "Close", accelerator: "Alt+F4", click: () => mainWindow.close() }
+  ]);
+  
+  menu.popup({
+    window: mainWindow,
+    x: x ? Math.round(x) : undefined,
+    y: y ? Math.round(y) : undefined
+  });
 });
 
 app.on("window-all-closed", () => {

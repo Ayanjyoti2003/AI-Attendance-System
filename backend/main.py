@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.database import SessionLocal
 from backend.models import Attendance, Employee, Camera, User, AuditLog, UserRole, UserStatus, SystemConfig
 from face_service.embedding_utils import generate_embedding
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 import os
 import numpy as np
@@ -20,15 +20,18 @@ from enum import Enum
 from typing import Optional
 from backend.auth import (
     verify_password,
-    create_access_token
+    create_access_token,
+    hash_password,
+    validate_password_policy,
+    generate_recovery_key
 )
 from backend.dependencies import get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
 from backend.audit import create_audit_log
 from backend.permissions import require_role
-from backend.auth import hash_password
 from backend.websocket_manager import manager
 import asyncio
+
 
 
 from backend.backup import get_uploads_dir, get_employees_dir
@@ -99,6 +102,19 @@ class UserStatusUpdate(BaseModel):
 
 class UserRoleUpdate(BaseModel):
     role: UserRole
+
+class UserPasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+class UserPasswordReset(BaseModel):
+    new_password: str
+    must_change_password: bool
+
+class AdminRecoveryRequest(BaseModel):
+    recovery_key: str
+    new_password: str
 
 # -----------------------------
 # HEALTH CHECK
@@ -192,8 +208,21 @@ def setup_admin(data: SetupAdmin):
             return {"error": "Setup already completed"}
 
         # Validate
-        if len(data.password) < 8:
-            return {"error": "Password must be at least 8 characters"}
+        try:
+            validate_password_policy(data.password)
+        except HTTPException as e:
+            return {"error": e.detail}
+
+        # Generate Recovery Key
+        recovery_key = generate_recovery_key()
+        hashed_recovery_key = hash_password(recovery_key)
+
+        # Save hashed recovery key in SystemConfig
+        config_rec = SystemConfig(
+            key="recovery_key_hash",
+            value=hashed_recovery_key
+        )
+        db.add(config_rec)
 
         # Create SUPER_ADMIN
         new_user = User(
@@ -205,7 +234,7 @@ def setup_admin(data: SetupAdmin):
         db.add(new_user)
         db.commit()
 
-        return {"status": "created"}
+        return {"status": "created", "recovery_key": recovery_key}
     finally:
         db.close()
 
@@ -1151,7 +1180,8 @@ def login(form_data :  OAuth2PasswordRequestForm = Depends()):
         token = create_access_token(
             {
                 "sub": user.username,
-                "role": user.role
+                "role": user.role,
+                "token_version": user.token_version
             }
         )
 
@@ -1162,7 +1192,8 @@ def login(form_data :  OAuth2PasswordRequestForm = Depends()):
         )
         return {
             "access_token": token,
-            "token_type": "bearer"
+            "token_type": "bearer",
+            "must_change_password": user.must_change_password
         }
 
     finally:
@@ -1462,6 +1493,244 @@ def update_user_role(
             "new_role": data.role
         }
 
+    finally:
+        db.close()
+
+
+# -----------------------------
+# PASSWORD MANAGEMENT & RESET
+# -----------------------------
+
+@app.post("/api/users/change-password")
+def change_password(
+    data: UserPasswordChange,
+    user=Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        db_user = db.query(User).filter(User.username == user["sub"]).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify current password
+        if not verify_password(data.current_password, db_user.password_hash):
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+        # Verify new password confirm
+        if data.new_password != data.confirm_password:
+            raise HTTPException(status_code=400, detail="New passwords do not match")
+            
+        # Enforce policy
+        validate_password_policy(data.new_password, current_password=data.current_password)
+        
+        # Check if they were forced to change
+        was_forced = db_user.must_change_password
+        
+        # Update
+        db_user.password_hash = hash_password(data.new_password)
+        db_user.must_change_password = False
+        db_user.token_version += 1
+        
+        db.commit()
+        
+        # Log audit entry
+        if was_forced:
+            create_audit_log(
+                username=db_user.username,
+                action="PASSWORD_CHANGE_REQUIRED_COMPLETED",
+                details="User completed forced password update"
+            )
+        else:
+            create_audit_log(
+                username=db_user.username,
+                action="PASSWORD_CHANGED",
+                details="User changed their password"
+            )
+            
+        return {"status": "success", "message": "Password changed successfully"}
+    finally:
+        db.close()
+
+
+@app.post("/api/users/{user_id}/reset-password")
+def reset_password(
+    user_id: int,
+    data: UserPasswordReset,
+    user=Depends(get_current_user)
+):
+    require_role(user, ["SUPER_ADMIN", "ADMIN"])
+    
+    db = SessionLocal()
+    try:
+        # Find target user
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Prevent self-reset via this endpoint
+        if target_user.username == user["sub"]:
+            raise HTTPException(status_code=400, detail="Cannot reset your own password via this endpoint")
+            
+        # Admin privilege checking (ADMIN role cannot reset SUPER_ADMIN)
+        if target_user.role == "SUPER_ADMIN" and user["role"] != "SUPER_ADMIN":
+            raise HTTPException(status_code=403, detail="ADMIN role cannot reset SUPER_ADMIN password")
+            
+        # Enforce policy
+        validate_password_policy(data.new_password, current_password=None)
+        
+        # Update
+        target_user.password_hash = hash_password(data.new_password)
+        target_user.must_change_password = data.must_change_password
+        target_user.token_version += 1
+        
+        db.commit()
+        
+        # Log audit entry
+        create_audit_log(
+            username=user["sub"],
+            action="PASSWORD_RESET",
+            details=f"Password reset for user {target_user.username}. Force change on next login: {data.must_change_password}"
+        )
+        
+        return {"status": "success", "message": "User password reset successfully"}
+    finally:
+        db.close()
+
+
+@app.post("/api/recover-admin")
+def recover_admin(
+    data: AdminRecoveryRequest
+):
+    db = SessionLocal()
+    try:
+        # Load recovery attempts and last failed attempt from SystemConfig
+        config_attempts = db.query(SystemConfig).filter(SystemConfig.key == "recovery_failed_attempts").first()
+        config_last_failed = db.query(SystemConfig).filter(SystemConfig.key == "last_recovery_failed_attempt").first()
+        
+        attempts = 0
+        last_failed_dt = None
+        
+        if config_attempts:
+            try:
+                attempts = int(config_attempts.value)
+            except ValueError:
+                attempts = 0
+                
+        if config_last_failed and config_last_failed.value:
+            try:
+                last_failed_dt = datetime.fromisoformat(config_last_failed.value)
+            except ValueError:
+                last_failed_dt = None
+                
+        # Cooldown check: if more than 30 minutes since last failure, reset attempts
+        if last_failed_dt and (datetime.utcnow() - last_failed_dt > timedelta(minutes=30)):
+            attempts = 0
+            
+        # Calculate dynamic delay based on previous failures
+        delay = 0
+        if attempts == 1:
+            delay = 5
+        elif attempts == 2:
+            delay = 15
+        elif attempts == 3:
+            delay = 30
+        elif attempts >= 4:
+            delay = 60
+            
+        # Check if caller has waited long enough
+        if attempts > 0 and last_failed_dt:
+            elapsed = (datetime.utcnow() - last_failed_dt).total_seconds()
+            if elapsed < delay:
+                wait_time = int(delay - elapsed)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Please wait {wait_time} seconds before another recovery attempt."
+                )
+                
+        # Retrieve the recovery key hash
+        config_hash = db.query(SystemConfig).filter(SystemConfig.key == "recovery_key_hash").first()
+        if not config_hash or not config_hash.value:
+            raise HTTPException(
+                status_code=400,
+                detail="Recovery Key has not been set up."
+            )
+            
+        # Check the key
+        if verify_password(data.recovery_key, config_hash.value):
+            # Key is correct! Settle recovery immediately
+            
+            # Find the SUPER_ADMIN user
+            admin_user = db.query(User).filter(User.role == "SUPER_ADMIN").first()
+            if not admin_user:
+                raise HTTPException(
+                    status_code=400,
+                    detail="SUPER_ADMIN account not found."
+                )
+                
+            # Validate new password policy
+            if verify_password(data.new_password, admin_user.password_hash):
+                raise HTTPException(
+                    status_code=400,
+                    detail="New password cannot be the same as the current password."
+                )
+            validate_password_policy(data.new_password, current_password=None)
+            
+            # Reset password
+            admin_user.password_hash = hash_password(data.new_password)
+            admin_user.must_change_password = False
+            admin_user.token_version += 1
+            
+            # Reset failed counters
+            if config_attempts:
+                config_attempts.value = "0"
+            else:
+                db.add(SystemConfig(key="recovery_failed_attempts", value="0"))
+                
+            if config_last_failed:
+                config_last_failed.value = ""
+            else:
+                db.add(SystemConfig(key="last_recovery_failed_attempt", value=""))
+                
+            db.commit()
+            
+            create_audit_log(
+                username=admin_user.username,
+                action="ADMIN_RECOVERY_SUCCESSFUL",
+                details="Administrator password recovered successfully via Recovery Key."
+            )
+            
+            return {
+                "status": "recovered",
+                "message": "Administrator password recovered successfully. Please log in with your new password."
+            }
+        else:
+            # Key is incorrect
+            # Increment attempts
+            attempts_new = attempts + 1
+            if config_attempts:
+                config_attempts.value = str(attempts_new)
+            else:
+                db.add(SystemConfig(key="recovery_failed_attempts", value=str(attempts_new)))
+                
+            now_iso = datetime.utcnow().isoformat()
+            if config_last_failed:
+                config_last_failed.value = now_iso
+            else:
+                db.add(SystemConfig(key="last_recovery_failed_attempt", value=now_iso))
+                
+            db.commit()
+            
+            create_audit_log(
+                username="system",
+                action="ADMIN_RECOVERY_FAILED",
+                details=f"Failed recovery attempt. Current failures: {attempts_new}"
+            )
+            
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid recovery key"
+            )
+            
     finally:
         db.close()
 

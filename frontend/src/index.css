@@ -99,3 +99,19 @@ body {
 .animate-slide-up {
   animation: slide-up 0.35s ease-out forwards;
 }
+
+/* Custom Electron Title Bar classes */
+.window-active {
+  background-color: rgba(17, 24, 39, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+  color: #F5F5F5;
+  transition: opacity 150ms ease-out, color 150ms ease-out;
+}
+
+.window-inactive {
+  background-color: rgba(17, 24, 39, 0.95);
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 245, 245, 0.7);
+  opacity: 0.75;
+  transition: opacity 150ms ease-out, color 150ms ease-out;
+}

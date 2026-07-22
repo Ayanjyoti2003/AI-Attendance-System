@@ -91,7 +91,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
         <aside
             className={`
                 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-r border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-100 
-                flex flex-col h-screen sticky top-0 transition-all duration-300 z-30 select-none
+                flex flex-col h-full sticky top-0 transition-all duration-300 z-30 select-none
                 ${isCollapsed ? "w-20" : "w-64"}
             `}
         >

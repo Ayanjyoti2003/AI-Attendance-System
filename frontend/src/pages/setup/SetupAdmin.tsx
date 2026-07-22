@@ -33,6 +33,73 @@ export default function SetupAdmin({ onSuccess, onBack, showToast, initialUserna
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
+    const [confirmedStored, setConfirmedStored] = useState(false);
+
+    if (recoveryKey) {
+        return (
+            <div className="animate-fade-in flex flex-col items-center text-center select-none">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-6 shadow-lg shadow-amber-500/5">
+                    <svg className="w-8 h-8 text-amber-450" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <h2 className="text-xl font-black text-white tracking-tight">
+                    Save Administrator Recovery Key
+                </h2>
+                <p className="text-zinc-400 text-sm mt-2 leading-relaxed max-w-sm mb-6">
+                    This key can be used to recover administrator access if you forget your password.
+                    <span className="text-amber-500 font-bold block mt-1">This key cannot be shown again.</span>
+                </p>
+
+                {/* Key Display & Copy */}
+                <div className="w-full flex flex-col gap-3 mb-6">
+                    <div className="py-4 px-6 rounded-xl bg-zinc-950 border border-zinc-800 font-mono text-lg font-bold tracking-widest text-zinc-100 select-all flex items-center justify-between">
+                        <span>{recoveryKey}</span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                navigator.clipboard.writeText(recoveryKey);
+                                showToast("Recovery Key copied to clipboard!", "success");
+                            }}
+                            className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer flex items-center justify-center"
+                            title="Copy Key"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Confirmation Checkbox */}
+                <label className="flex items-center gap-3 cursor-pointer group mb-6 text-left w-full p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+                    <input
+                        type="checkbox"
+                        checked={confirmedStored}
+                        onChange={(e) => setConfirmedStored(e.target.checked)}
+                        className="w-5 h-5 rounded border-zinc-800 bg-zinc-950 text-blue-600 focus:ring-blue-500/20 focus:ring-offset-zinc-900 transition-colors cursor-pointer"
+                    />
+                    <span className="text-zinc-400 group-hover:text-zinc-300 text-sm font-medium transition-colors select-none">
+                        I have copied and saved this recovery key safely
+                    </span>
+                </label>
+
+                {/* Actions */}
+                <button
+                    type="button"
+                    onClick={onSuccess}
+                    disabled={!confirmedStored}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold text-sm transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                >
+                    Continue Setup
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                </button>
+            </div>
+        );
+    }
 
     if (adminCreated) {
         return (
@@ -110,7 +177,11 @@ export default function SetupAdmin({ onSuccess, onBack, showToast, initialUserna
             }
 
             showToast("Administrator account created!", "success");
-            onSuccess();
+            if (res.recovery_key) {
+                setRecoveryKey(res.recovery_key);
+            } else {
+                onSuccess();
+            }
         } catch {
             setError("Failed to create administrator. Please try again.");
         } finally {

@@ -3,7 +3,8 @@ from sqlalchemy import (
     Integer,
     String,
     ForeignKey,
-    DateTime
+    DateTime,
+    Boolean
 )
 from backend.database import Base
 from datetime import datetime
@@ -108,6 +109,20 @@ class User(Base):
     status = Column(
         String,
         default="ACTIVE"
+    )
+
+    must_change_password = Column(
+        Boolean,
+        default=False,
+        server_default='false',
+        nullable=False
+    )
+
+    token_version = Column(
+        Integer,
+        default=1,
+        server_default='1',
+        nullable=False
     )
 
     created_at = Column(
